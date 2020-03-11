@@ -91,6 +91,7 @@ open class TLPhotoCollectionViewCell: UICollectionViewCell {
     @objc open var selectedAsset: Bool = false {
         willSet(newValue) {
             self.selectedView?.isHidden = !newValue
+            self.orderBgView?.isHidden = self.configure.maxSelectedAssets == 1
             self.durationView?.backgroundColor = newValue ? self.configure.selectedColor : UIColor(red: 0, green: 0, blue: 0, alpha: 0.6)
             if !newValue {
                 self.orderLabel?.text = ""
