@@ -77,6 +77,7 @@ public struct TLPhotosPickerConfigure {
     public var emptyImage: UIImage? = nil
     public var usedCameraButton = true
     public var usedPrefetch = false
+    public var saveCameraCaptured = true
     public var previewAtForceTouch = false
     public var startplayBack: PHLivePhotoViewPlaybackStyle = .hint
     public var allowedLivePhotos = true
@@ -609,15 +610,17 @@ extension TLPhotosPickerViewController: UIImagePickerControllerDelegate, UINavig
         let picker = UIImagePickerController()
         picker.sourceType = .camera
         var mediaTypes: [String] = []
-        if self.configure.allowedPhotograph {
-            mediaTypes.append(kUTTypeImage as String)
+        switch configure.mediaType {
+        case .image:
+            mediaTypes = [kUTTypeImage as String]
+        case .video:
+            mediaTypes = [kUTTypeMovie as String]
+        default:
+            mediaTypes = [kUTTypeImage as String, kUTTypeMovie as String]
         }
-        if self.configure.allowedVideoRecording {
-            mediaTypes.append(kUTTypeMovie as String)
-            picker.videoQuality = self.configure.recordingVideoQuality
-            if let duration = self.configure.maxVideoDuration {
-                picker.videoMaximumDuration = duration
-            }
+        picker.videoQuality = self.configure.recordingVideoQuality
+        if let duration = self.configure.maxVideoDuration {
+            picker.videoMaximumDuration = duration
         }
         guard mediaTypes.count > 0 else {
             return
@@ -647,6 +650,27 @@ extension TLPhotosPickerViewController: UIImagePickerControllerDelegate, UINavig
     }
     
     open func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+        if !configure.saveCameraCaptured {
+            if let mediaType = info[.mediaType] as? String {
+                if mediaType == kUTTypeImage as String {
+                    if let capturedImage = TLCapturedImage(info: info) {
+                        didPick?([.capturedImage(capturedImage)])
+                    } else {
+                        didFail?(.noMediaCaptured)
+                    }
+                } else if mediaType == kUTTypeMovie as String {
+                    if let mediaURL = info[.mediaURL] as? URL {
+                        didPick?([.capturedVideo(mediaURL)])
+                    } else {
+                        didFail?(.noMediaCaptured)
+                    }
+                } else {
+                    dismiss(animated: true)
+                }
+            }
+            return
+        }
+        
         if let image = (info[.originalImage] as? UIImage) {
             var placeholderAsset: PHObjectPlaceholder? = nil
             PHPhotoLibrary.shared().performChanges({
