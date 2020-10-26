@@ -278,11 +278,15 @@ open class TLPhotosPickerViewController: UIViewController {
     private func requestAuthorization() {
         if #available(iOS 14.0, *) {
             PHPhotoLibrary.requestAuthorization(for:  .readWrite) { [weak self] status in
-                self?.processAuthorization(status: status)
+                DispatchQueue.main.async {
+                    self?.processAuthorization(status: status)
+                }
             }
         } else {
             PHPhotoLibrary.requestAuthorization { [weak self] status in
-                self?.processAuthorization(status: status)
+                DispatchQueue.main.async {
+                    self?.processAuthorization(status: status)
+                }
             }
         }
     }
