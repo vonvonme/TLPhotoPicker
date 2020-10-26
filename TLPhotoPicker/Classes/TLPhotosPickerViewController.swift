@@ -20,6 +20,10 @@ public enum TLMedia {
 public enum TLError: Error {
     case cancelled
     case noMediaCaptured
+    case userDeniedPhotosPermission
+    case noPhotosPermission(PHAuthorizationStatus)
+    case userDeniedCameraPermission
+    case noCameraPermission(AVAuthorizationStatus)
 }
 
 public struct TLCapturedImage {
@@ -39,16 +43,11 @@ public struct TLCapturedImage {
 public protocol TLPhotosPickerViewControllerDelegate: class {
     func canSelectAsset(phAsset: PHAsset) -> Bool
     func didExceedMaximumNumberOfSelection(picker: TLPhotosPickerViewController)
-    func handleNoAlbumPermissions(picker: TLPhotosPickerViewController)
-    func handleNoCameraPermissions(picker: TLPhotosPickerViewController)
 }
 
 extension TLPhotosPickerViewControllerDelegate {
-    public func deninedAuthoization() { }
     public func canSelectAsset(phAsset: PHAsset) -> Bool { return true }
     public func didExceedMaximumNumberOfSelection(picker: TLPhotosPickerViewController) { }
-    public func handleNoAlbumPermissions(picker: TLPhotosPickerViewController) { }
-    public func handleNoCameraPermissions(picker: TLPhotosPickerViewController) { }
 }
 
 //for log
@@ -196,8 +195,6 @@ open class TLPhotosPickerViewController: UIViewController {
     }
     @objc open var canSelectAsset: ((PHAsset) -> Bool)? = nil
     @objc open var didExceedMaximumNumberOfSelection: ((TLPhotosPickerViewController) -> Void)? = nil
-    @objc open var handleNoAlbumPermissions: ((TLPhotosPickerViewController) -> Void)? = nil
-    @objc open var handleNoCameraPermissions: ((TLPhotosPickerViewController) -> Void)? = nil
     public var didPick: (([TLMedia]) -> Void)? = nil
     public var didFail: ((TLError) -> Void)? = nil
     
@@ -272,7 +269,7 @@ open class TLPhotosPickerViewController: UIViewController {
         case .authorized:
             loadPhotos(limitMode: false)
         case .restricted, .denied:
-            handleDeniedAlbumsAuthorization()
+            didFail?(.noPhotosPermission(status))
         @unknown default:
             break
         }
@@ -594,12 +591,12 @@ extension TLPhotosPickerViewController: UIImagePickerControllerDelegate, UINavig
                     if authorized {
                         self?.showCamera()
                     } else {
-                        self?.handleDeniedCameraAuthorization()
+                        self?.didFail?(.userDeniedCameraPermission)
                     }
                 }
             })
         case .restricted, .denied:
-            self.handleDeniedCameraAuthorization()
+            self.didFail?(.noCameraPermission(cameraAuthorization))
         @unknown default:
             break
         }
@@ -631,20 +628,6 @@ extension TLPhotosPickerViewController: UIImagePickerControllerDelegate, UINavig
         self.present(picker, animated: true, completion: nil)
     }
 
-    private func handleDeniedAlbumsAuthorization() {
-        DispatchQueue.main.async {
-            self.delegate?.handleNoAlbumPermissions(picker: self)
-            self.handleNoAlbumPermissions?(self)
-        }
-    }
-    
-    private func handleDeniedCameraAuthorization() {
-        DispatchQueue.main.async {
-            self.delegate?.handleNoCameraPermissions(picker: self)
-            self.handleNoCameraPermissions?(self)
-        }
-    }
-    
     open func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
         dismiss(animated: true)
     }
