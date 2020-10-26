@@ -11,12 +11,32 @@ import Photos
 import PhotosUI
 import MobileCoreServices
 
+public enum TLMedia {
+    case capturedImage(TLCapturedImage)
+    case capturedVideo(URL)
+    case album(PHAsset)
+}
+
+public enum TLError: Error {
+    case cancelled
+    case noMediaCaptured
+}
+
+public struct TLCapturedImage {
+    public let originalImage: UIImage
+    public let mediaMetadata: [String: Any]
+    
+    init?(info: [UIImagePickerController.InfoKey: Any]) {
+        guard let originalImage = info[.originalImage] as? UIImage,
+            let mediaMetadata = info[.mediaMetadata] as? [String: Any] else {
+                return nil
+        }
+        self.originalImage = originalImage
+        self.mediaMetadata = mediaMetadata
+    }
+}
+
 public protocol TLPhotosPickerViewControllerDelegate: class {
-    func dismissPhotoPicker(withPHAssets: [PHAsset])
-    func dismissPhotoPicker(withTLPHAssets: [TLPHAsset])
-    func shouldDismissPhotoPicker(withTLPHAssets: [TLPHAsset]) -> Bool
-    func dismissComplete()
-    func photoPickerDidCancel()
     func canSelectAsset(phAsset: PHAsset) -> Bool
     func didExceedMaximumNumberOfSelection(picker: TLPhotosPickerViewController)
     func handleNoAlbumPermissions(picker: TLPhotosPickerViewController)
@@ -25,11 +45,6 @@ public protocol TLPhotosPickerViewControllerDelegate: class {
 
 extension TLPhotosPickerViewControllerDelegate {
     public func deninedAuthoization() { }
-    public func dismissPhotoPicker(withPHAssets: [PHAsset]) { }
-    public func dismissPhotoPicker(withTLPHAssets: [TLPHAsset]) { }
-    public func shouldDismissPhotoPicker(withTLPHAssets: [TLPHAsset]) -> Bool { return true }
-    public func dismissComplete() { }
-    public func photoPickerDidCancel() { }
     public func canSelectAsset(phAsset: PHAsset) -> Bool { return true }
     public func didExceedMaximumNumberOfSelection(picker: TLPhotosPickerViewController) { }
     public func handleNoAlbumPermissions(picker: TLPhotosPickerViewController) { }
@@ -182,10 +197,8 @@ open class TLPhotosPickerViewController: UIViewController {
     @objc open var didExceedMaximumNumberOfSelection: ((TLPhotosPickerViewController) -> Void)? = nil
     @objc open var handleNoAlbumPermissions: ((TLPhotosPickerViewController) -> Void)? = nil
     @objc open var handleNoCameraPermissions: ((TLPhotosPickerViewController) -> Void)? = nil
-    @objc open var dismissCompletion: (() -> Void)? = nil
-    private var completionWithPHAssets: (([PHAsset]) -> Void)? = nil
-    private var completionWithTLPHAssets: (([TLPHAsset]) -> Void)? = nil
-    private var didCancel: (() -> Void)? = nil
+    public var didPick: (([TLMedia]) -> Void)? = nil
+    public var didFail: ((TLError) -> Void)? = nil
     
     private var collections = [TLAssetsCollection]()
     private var focusedCollection: TLAssetsCollection? = nil
@@ -209,18 +222,6 @@ open class TLPhotosPickerViewController: UIViewController {
     
     public init() {
         super.init(nibName: "TLPhotosPickerViewController", bundle: TLBundle.bundle())
-    }
-    
-    @objc convenience public init(withPHAssets: (([PHAsset]) -> Void)? = nil, didCancel: (() -> Void)? = nil) {
-        self.init()
-        self.completionWithPHAssets = withPHAssets
-        self.didCancel = didCancel
-    }
-    
-    convenience public init(withTLPHAssets: (([TLPHAsset]) -> Void)? = nil, didCancel: (() -> Void)? = nil) {
-        self.init()
-        self.completionWithTLPHAssets = withTLPHAssets
-        self.didCancel = didCancel
     }
     
     override open var supportedInterfaceOrientations: UIInterfaceOrientationMask {
@@ -519,45 +520,17 @@ extension TLPhotosPickerViewController {
     
     @IBAction open func cancelButtonTap() {
         self.stopPlay()
-        self.dismiss(done: false)
+        didFail?(.cancelled)
     }
     
     @IBAction open func doneButtonTap() {
         self.stopPlay()
-        self.dismiss(done: true)
+        didPick?(selectedAssets.compactMap({ $0.phAsset }).map({ .album($0) }))
     }
     
     @IBAction open func limitButtonTap() {
         if #available(iOS 14.0, *) {
             PHPhotoLibrary.shared().presentLimitedLibraryPicker(from: self)
-        }
-    }
-    
-    private func dismiss(done: Bool) {
-        var shouldDismiss = true
-        if done {
-            #if swift(>=4.1)
-            self.delegate?.dismissPhotoPicker(withPHAssets: self.selectedAssets.compactMap{ $0.phAsset })
-            #else
-            self.delegate?.dismissPhotoPicker(withPHAssets: self.selectedAssets.flatMap{ $0.phAsset })
-            #endif
-            self.delegate?.dismissPhotoPicker(withTLPHAssets: self.selectedAssets)
-            shouldDismiss = self.delegate?.shouldDismissPhotoPicker(withTLPHAssets: self.selectedAssets) ?? true
-            self.completionWithTLPHAssets?(self.selectedAssets)
-            #if swift(>=4.1)
-            self.completionWithPHAssets?(self.selectedAssets.compactMap{ $0.phAsset })
-            #else
-            self.completionWithPHAssets?(self.selectedAssets.flatMap{ $0.phAsset })
-            #endif
-        }else {
-            self.delegate?.photoPickerDidCancel()
-            self.didCancel?()
-        }
-        if shouldDismiss {
-            self.dismiss(animated: true) { [weak self] in
-                self?.delegate?.dismissComplete()
-                self?.dismissCompletion?()
-            }
         }
     }
     
@@ -670,7 +643,7 @@ extension TLPhotosPickerViewController: UIImagePickerControllerDelegate, UINavig
     }
     
     open func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-        picker.dismiss(animated: true, completion: nil)
+        dismiss(animated: true)
     }
     
     open func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
